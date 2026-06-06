@@ -1,4 +1,3 @@
-# mt7927.url = "github:cmspam/mt7927-nixos";
 {
   description = "NixOS hardware support for MediaTek MT7927 / MT6639 (Filogic 380) WiFi 7 and Bluetooth";
 
@@ -24,10 +23,14 @@
       repoSrc = mediatek-mt7927-dkms;
 
       # 1. Load automated version/hash data from the JSON bridge
-      versions = {
-        mt76KVer = "6.19.9";
-        mt76Hash = "sha256-eBgF9DPTqZVLfJkU95IZrEbsgRL0FQI6yzTGOiKJVRQ=";
-      };
+      versions =
+        if builtins.pathExists ./versions.json then
+          builtins.fromJSON (builtins.readFile ./versions.json)
+        else
+          {
+            mt76KVer = "7.0";
+            mt76Hash = "sha256-7TjYHhJdD67P3lquusrjjVtUIUzhLPtA5Oy7tc82gYA=";
+          };
 
       # 2. Parse metadata from the DKMS repo's PKGBUILD for ASUS firmware
       pkgbuild = builtins.readFile "${repoSrc}/PKGBUILD";
@@ -44,23 +47,19 @@
         in
         if m != null then builtins.head m else "b377fffa28208bb1671a0eb219c84c62fba4cd6f92161b74e4b0909476307cc8";
 
-      # Dynamically discover mt7927-wifi-*.patch files from the repo
-      mt7927WifiPatches =
-        let
-          files = builtins.attrNames (builtins.readDir "${repoSrc}");
-          isWifiPatch = f: builtins.match "mt7927-wifi-.*\\.patch" f != null;
-          patchNames = builtins.sort builtins.lessThan (builtins.filter isWifiPatch files);
-        in
-        map (f: "${repoSrc}/${f}") patchNames;
+      # 3. Patch lists — read from versions.json, populated by the
+      #    auto-update workflow which resolves them from the upstream
+      #    Makefile's glob patterns in the correct application order.
+      wifiPatches = map (n: "${repoSrc}/${n}") (versions.wifiPatches or [ ]);
+      btPatches = map (n: "${repoSrc}/${n}") (versions.btPatches or [ ]);
 
-      # 3. Fetch Kernel source using the Tarball method to ensure hash consistency
-      # This matches the behavior of the update.sh script.
+      # 4. Fetch kernel source
       linuxDrivers = pkgs.fetchzip {
         url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-${versions.mt76KVer}.tar.gz";
         hash = versions.mt76Hash;
       };
 
-      # 4. Firmware source from ASUS
+      # 5. Firmware source from ASUS
       asusZip = pkgs.fetchurl {
         url = "https://dlcdnets.asus.com/pub/ASUS/mb/08WIRELESS/${driverFilename}";
         hash = "sha256:${driverSha256Hex}";
@@ -78,7 +77,7 @@
         rec {
           firmware = kernel.stdenv.mkDerivation {
             pname = "mediatek-mt7927-firmware";
-            version = "2.7";
+            version = "2.1";
             dontUnpack = true;
             nativeBuildInputs = [
               pkgs.libarchive
@@ -108,23 +107,20 @@
 
           wifi = kernel.stdenv.mkDerivation {
             pname = "mediatek-mt7927-wifi";
-            version = "2.7";
+            version = "2.1";
             src = "${linuxDrivers}/drivers/net/wireless/mediatek/mt76";
             nativeBuildInputs = kernel.moduleBuildDependencies ++ [
               pkgs.python3
               pkgs.perl
               pkgs.kmod
             ];
-            patches = [
-              "${repoSrc}/mt7902-wifi-6.19.patch"
-            ] ++ mt7927WifiPatches;
+            patches = wifiPatches;
             postPatch = ''
-              # Use upstream Kbuild files
+              # Install upstream Kbuild files
               cp ${repoSrc}/mt76.Kbuild Kbuild
               cp ${repoSrc}/mt7921.Kbuild mt7921/Kbuild
               cp ${repoSrc}/mt7925.Kbuild mt7925/Kbuild
-
-              # Install compat header for kernels missing airoha_offload.h
+              # Install compat header for kernels lacking airoha_offload.h
               mkdir -p compat/include/linux/soc/airoha
               cp ${repoSrc}/compat-airoha-offload.h \
                 compat/include/linux/soc/airoha/airoha_offload.h
@@ -147,14 +143,12 @@
 
           bluetooth = kernel.stdenv.mkDerivation {
             pname = "mediatek-mt7927-bluetooth";
-            version = "2.7";
+            version = "2.1";
             src = "${linuxDrivers}/drivers/bluetooth";
             nativeBuildInputs = kernel.moduleBuildDependencies ++ [ pkgs.kmod ];
+            patches = btPatches;
             buildPhase = ''
               runHook preBuild
-              if ! grep -q '0x6639' btmtk.c; then
-                patch -p3 < ${repoSrc}/mt6639-bt-6.19.patch
-              fi
               echo "obj-m += btusb.o btmtk.o" > Makefile
               make -C ${kernelBuild} M=$(pwd) ${makeFlags} modules
               runHook postBuild

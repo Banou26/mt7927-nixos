@@ -1,0 +1,44 @@
+{
+  "nodes": {
+    "mediatek-mt7927-dkms": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779566214,
+        "narHash": "sha256-uJiAJSAgPHSR7/ixepQn43VWnARipfUxrDiARr4PrCs=",
+        "owner": "jetm",
+        "repo": "mediatek-mt7927-dkms",
+        "rev": "9dfa7d168b1ba94b9d83d4b09e2f4a878cff7a47",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jetm",
+        "repo": "mediatek-mt7927-dkms",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1780243769,
+        "narHash": "sha256-x5UQuRsH3MqI0U9afaXSNqzTPSeZlRLvFAav2Ux1pNw=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "331800de5053fcebacf6813adb5db9c9dca22a0c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "mediatek-mt7927-dkms": "mediatek-mt7927-dkms",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

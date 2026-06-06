@@ -1,0 +1,70 @@
+name: Auto Update
+on:
+  schedule:
+    - cron: '0 * * * *' # Every hour
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Flake Inputs
+        run: nix flake update
+
+      - name: Check for flake.lock changes
+        id: check
+        run: |
+          if git diff --quiet flake.lock; then
+            echo "No changes in flake.lock, skipping."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "flake.lock changed, proceeding with update."
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync Kernel Hash and Patch Lists
+        id: sync
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          SOURCE_PATH=$(nix eval --impure --raw .#repo-src.outPath)
+          echo "Source path found at: $SOURCE_PATH"
+
+          VER=$(grep "_mt76_kver=" "$SOURCE_PATH/PKGBUILD" | cut -d"'" -f2)
+
+          if [ -z "$VER" ]; then
+            echo "Error: Could not extract version from PKGBUILD"
+            exit 1
+          fi
+          echo "Detected Target Kernel Version: $VER"
+
+          chmod +x ./update.sh
+          ./update.sh "$VER" "$SOURCE_PATH"
+
+          echo "VERSION=$VER" >> $GITHUB_OUTPUT
+
+      - name: Commit and Push Changes
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add versions.json flake.lock
+
+          if git diff --cached --quiet; then
+            echo "No changes detected, skipping push."
+          else
+            git commit -m "chore: auto-update to v${{ steps.sync.outputs.VERSION }}"
+            git push
+          fi
